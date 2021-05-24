@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/go-redis/redis/v8"
 	"io"
 	"time"
 )
@@ -180,21 +179,21 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		if token := client.Connect(); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
-		rdb := redis.NewClient(&redis.Options{
-			Addr:     "localhost:6379",
-			Password: "", // no password set
-			DB:       0,  // use default DB
-		})
+		//rdb := redis.NewClient(&redis.Options{
+		//	Addr:     "localhost:6379",
+		//	Password: "", // no password set
+		//	DB:       0,  // use default DB
+		//})
 
 		msg := fmt.Sprintf("%x", aduRequest)
 		sendTopic := fmt.Sprintf("%s/modbusRtu/down", "123456")
 		client.Publish(sendTopic, 1, false, msg)
 
-		val, err := rdb.Get(ctx, msg).Result()
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("key", val)
+		//val, err := rdb.Get(ctx, msg).Result()
+		//if err != nil {
+		//	panic(err)
+		//}
+		//fmt.Println("key", val)
 
 		client.Disconnect(1)
 		return nil, err
