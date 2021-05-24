@@ -5,8 +5,11 @@
 package modbus
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/go-redis/redis/v8"
 	"io"
 	"time"
 )
@@ -17,6 +20,8 @@ const (
 
 	rtuExceptionSize = 5
 )
+
+var ctx = context.Background()
 
 // RTUClientHandler implements Packager and Transporter interface.
 type RTUClientHandler struct {
@@ -119,50 +124,79 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 	mb.serialPort.lastActivity = time.Now()
 	mb.serialPort.startCloseTimer()
 
-	// Send the request
-	mb.serialPort.logf("modbus: sending % x\n", aduRequest)
-	if _, err = mb.port.Write(aduRequest); err != nil {
-		return
-	}
-	function := aduRequest[1]
-	functionFail := aduRequest[1] & 0x80
-	bytesToRead := calculateResponseLength(aduRequest)
-	time.Sleep(mb.calculateDelay(len(aduRequest) + bytesToRead))
+	if mb.serialPort.Address == "/dev/ttyS0" {
+		// Send the request
+		mb.serialPort.logf("modbus: sending % x\n", aduRequest)
+		if _, err = mb.port.Write(aduRequest); err != nil {
+			return
+		}
+		function := aduRequest[1]
+		functionFail := aduRequest[1] & 0x80
+		bytesToRead := calculateResponseLength(aduRequest)
+		time.Sleep(mb.calculateDelay(len(aduRequest) + bytesToRead))
 
-	var n int
-	var n1 int
-	var data [rtuMaxSize]byte
-	//We first read the minimum length and then read either the full package
-	//or the error package, depending on the error status (byte 2 of the response)
-	n, err = io.ReadAtLeast(mb.port, data[:], rtuMinSize)
-	if err != nil {
-		return
-	}
-	//if the function is correct
-	if data[1] == function {
-		//we read the rest of the bytes
-		if n < bytesToRead {
-			if bytesToRead > rtuMinSize && bytesToRead <= rtuMaxSize {
-				if bytesToRead > n {
-					n1, err = io.ReadFull(mb.port, data[n:bytesToRead])
-					n += n1
+		var n int
+		var n1 int
+		var data [rtuMaxSize]byte
+		//We first read the minimum length and then read either the full package
+		//or the error package, depending on the error status (byte 2 of the response)
+		n, err = io.ReadAtLeast(mb.port, data[:], rtuMinSize)
+		if err != nil {
+			return
+		}
+		//if the function is correct
+		if data[1] == function {
+			//we read the rest of the bytes
+			if n < bytesToRead {
+				if bytesToRead > rtuMinSize && bytesToRead <= rtuMaxSize {
+					if bytesToRead > n {
+						n1, err = io.ReadFull(mb.port, data[n:bytesToRead])
+						n += n1
+					}
 				}
 			}
+		} else if data[1] == functionFail {
+			//for error we need to read 5 bytes
+			if n < rtuExceptionSize {
+				n1, err = io.ReadFull(mb.port, data[n:rtuExceptionSize])
+			}
+			n += n1
 		}
-	} else if data[1] == functionFail {
-		//for error we need to read 5 bytes
-		if n < rtuExceptionSize {
-			n1, err = io.ReadFull(mb.port, data[n:rtuExceptionSize])
-		}
-		n += n1
-	}
 
-	if err != nil {
+		if err != nil {
+			return
+		}
+		aduResponse = data[:n]
+		mb.serialPort.logf("modbus: received % x\n", aduResponse)
 		return
+	} else {
+		opts := mqtt.NewClientOptions()
+		opts.AddBroker("mq.nlecloud.com:1883")
+		opts.SetClientID("tasdasdasd")
+		opts.SetUsername("")
+		opts.SetPassword("")
+		client := mqtt.NewClient(opts)
+
+		if token := client.Connect(); token.Wait() && token.Error() != nil {
+			panic(token.Error())
+		}
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     "localhost:6379",
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		})
+
+		client.Publish("topic", 1, false, aduRequest)
+
+		val, err := rdb.Get(ctx, string(aduRequest)).Result()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("key", val)
+
+		client.Disconnect(1)
+		return nil, err
 	}
-	aduResponse = data[:n]
-	mb.serialPort.logf("modbus: received % x\n", aduResponse)
-	return
 }
 
 // calculateDelay roughly calculates time needed for the next frame.
