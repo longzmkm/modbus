@@ -186,9 +186,11 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 			DB:       0,  // use default DB
 		})
 
-		client.Publish("topic", 1, false, aduRequest)
+		msg := fmt.Sprintf("%x", aduRequest)
+		sendTopic := fmt.Sprintf("%s/modbusRtu/down", "123456")
+		client.Publish(sendTopic, 1, false, msg)
 
-		val, err := rdb.Get(ctx, string(aduRequest)).Result()
+		val, err := rdb.Get(ctx, msg).Result()
 		if err != nil {
 			panic(err)
 		}
