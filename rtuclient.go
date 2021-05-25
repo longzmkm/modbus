@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/go-redis/redis/v8"
 	"io"
 	"time"
 )
@@ -19,8 +20,6 @@ const (
 
 	rtuExceptionSize = 5
 )
-
-var ctx = context.Background()
 
 // RTUClientHandler implements Packager and Transporter interface.
 type RTUClientHandler struct {
@@ -169,31 +168,34 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		mb.serialPort.logf("modbus: received % x\n", aduResponse)
 		return
 	} else {
+		// 初始化 mqtt
 		opts := mqtt.NewClientOptions()
 		opts.AddBroker("mq.nlecloud.com:1883")
-		opts.SetClientID("tasdasdasd")
+		//opts.SetClientID("tasdasdasd")
 		opts.SetUsername("")
 		opts.SetPassword("")
 		client := mqtt.NewClient(opts)
 
+		// 初始化 redis
+		var ctx = context.Background()
 		if token := client.Connect(); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
-		//rdb := redis.NewClient(&redis.Options{
-		//	Addr:     "localhost:6379",
-		//	Password: "", // no password set
-		//	DB:       0,  // use default DB
-		//})
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     "localhost:6379",
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		})
 
 		msg := fmt.Sprintf("%x", aduRequest)
 		sendTopic := fmt.Sprintf("%s/modbusRtu/down", "123456")
 		client.Publish(sendTopic, 1, false, msg)
 
-		//val, err := rdb.Get(ctx, msg).Result()
-		//if err != nil {
-		//	panic(err)
-		//}
-		//fmt.Println("key", val)
+		val, err := rdb.Get(ctx, msg).Result()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("key:", msg, "value:", val)
 
 		client.Disconnect(1)
 		return nil, err
