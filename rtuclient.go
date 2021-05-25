@@ -7,10 +7,12 @@ package modbus
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-redis/redis/v8"
 	"io"
+	"os"
 	"time"
 )
 
@@ -116,7 +118,7 @@ type rtuSerialTransporter struct {
 func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err error) {
 	// Make sure port is connected
 	if err = mb.serialPort.connect(); err != nil {
-		return
+		return nil, err
 	}
 	// Start the timer to close when idle
 	mb.serialPort.lastActivity = time.Now()
@@ -126,7 +128,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		// Send the request
 		mb.serialPort.logf("modbus: sending % x\n", aduRequest)
 		if _, err = mb.port.Write(aduRequest); err != nil {
-			return
+			return nil, err
 		}
 		function := aduRequest[1]
 		functionFail := aduRequest[1] & 0x80
@@ -140,7 +142,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		//or the error package, depending on the error status (byte 2 of the response)
 		n, err = io.ReadAtLeast(mb.port, data[:], rtuMinSize)
 		if err != nil {
-			return
+			return nil, err
 		}
 		//if the function is correct
 		if data[1] == function {
@@ -162,11 +164,11 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		}
 
 		if err != nil {
-			return
+			return nil, err
 		}
-		aduResponse = data[:n]
-		mb.serialPort.logf("modbus: received % x\n", aduResponse)
-		return
+		Response := data[:n]
+		mb.serialPort.logf("modbus: received % x\n", Response)
+		return Response, nil
 	} else {
 		// 初始化 mqtt
 		opts := mqtt.NewClientOptions()
@@ -175,7 +177,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		opts.SetUsername("")
 		opts.SetPassword("")
 		client := mqtt.NewClient(opts)
-
+		defer client.Disconnect(1)
 		// 初始化 redis
 		var ctx = context.Background()
 		if token := client.Connect(); token.Wait() && token.Error() != nil {
@@ -188,17 +190,30 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		})
 
 		msg := fmt.Sprintf("%x", aduRequest)
-		sendTopic := fmt.Sprintf("%s/modbusRtu/down", "123456")
+		userid := os.Getenv("userid")
+		sendTopic := fmt.Sprintf("%s/modbusRtu/down", userid)
 		client.Publish(sendTopic, 1, false, msg)
+		fmt.Println("send mqtt topic:", sendTopic, "value:", msg)
+		for i := 0; i < 100; i++ {
+			val, err := rdb.Get(ctx, msg).Result()
+			if err != nil {
+				time.Sleep(0.01)
+				continue
+			} else {
+				fmt.Println("key:", msg, "value:", val)
+				data, _ := hex.DecodeString(val)
 
+				return data, nil
+			}
+
+		}
 		val, err := rdb.Get(ctx, msg).Result()
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
-		fmt.Println("key:", msg, "value:", val)
+		data, _ := hex.DecodeString(val)
+		return data, nil
 
-		client.Disconnect(1)
-		return nil, err
 	}
 }
 
