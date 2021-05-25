@@ -184,7 +184,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 			panic(token.Error())
 		}
 		rdb := redis.NewClient(&redis.Options{
-			Addr:     "localhost:6379",
+			Addr:     "172.17.0.2:6379",
 			Password: "", // no password set
 			DB:       0,  // use default DB
 		})
@@ -197,7 +197,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		for i := 0; i < 100; i++ {
 			val, err := rdb.Get(ctx, msg).Result()
 			if err != nil {
-				time.Sleep(0.01)
+				time.Sleep(1)
 				continue
 			} else {
 				fmt.Println("key:", msg, "value:", val)
