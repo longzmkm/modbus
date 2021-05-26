@@ -124,7 +124,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 	mb.serialPort.lastActivity = time.Now()
 	mb.serialPort.startCloseTimer()
 
-	if mb.serialPort.Address == "/dev/ttyS0" {
+	if mb.serialPort.Address != "/dev/ttyS11" {
 		// Send the request
 		mb.serialPort.logf("modbus: sending % x\n", aduRequest)
 		if _, err = mb.port.Write(aduRequest); err != nil {
@@ -197,7 +197,8 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		for i := 0; i < 100; i++ {
 			val, err := rdb.Get(ctx, msg).Result()
 			if err != nil {
-				time.Sleep(1)
+				// time 单位是纳秒 1000 * 1000 = 1 毫秒
+				time.Sleep(1000 * 1000 * 500)
 				continue
 			} else {
 				fmt.Println("key:", msg, "value:", val)
