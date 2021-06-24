@@ -185,6 +185,7 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 			ip = "172.17.0.2"
 		}
 		redis_client := fmt.Sprintf("%s:36379", ip)
+		fmt.Println("redis ip:", redis_client)
 		if token := client.Connect(); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
