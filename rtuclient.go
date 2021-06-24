@@ -180,11 +180,16 @@ func (mb *rtuSerialTransporter) Send(aduRequest []byte) (aduResponse []byte, err
 		defer client.Disconnect(1)
 		// 初始化 redis
 		var ctx = context.Background()
+		ip := os.Getenv("local_ip")
+		if ip == ""{
+			ip = "172.17.0.2"
+		}
+		redis_client := fmt.Sprintf("%s:36379", ip)
 		if token := client.Connect(); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
 		rdb := redis.NewClient(&redis.Options{
-			Addr:     "172.17.0.2:6379",
+			Addr:     redis_client,
 			Password: "", // no password set
 			DB:       0,  // use default DB
 		})
